@@ -1,0 +1,31 @@
+{
+  "author": {
+    "name": "Sergey Pylypyshko",
+    "email": "sergeypylypyshko@gmail.com"
+  },
+  "bugs": {
+    "url": "https://github.com/mo0rych0k/issues"
+  },
+  "bundleDependencies": false,
+  "cordova": {
+    "id": "cordova-plugin-zip-loader",
+    "platforms": [
+      "android"
+    ]
+  },
+  "deprecated": false,
+  "description": "Cordova plugin to download and unzip zip file",
+  "keywords": [
+    "cordova",
+    "zip",
+    "ecosystem:cordova",
+    "cordova-android"
+  ],
+  "license": "MIT",
+  "name": "cordova-plugin-zip-loader",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mo0rych0k/cordova-plugin-zip-loader.git"
+  },
+  "version": "5.0.0"
+}

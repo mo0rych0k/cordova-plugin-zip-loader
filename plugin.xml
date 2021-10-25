@@ -1,0 +1,28 @@
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android" id="cordova-plugin-zip-loader" version="1.0.0">
+
+    <name>cordova-plugin-zip-loader</name>
+    <description>Cordova plugin to download and unzip zip file</description>
+    <license>MIT</license>
+    <keywords>cordova</keywords>
+    <repo>https://github.com/mo0rych0k/cordova-plugin-zip-loader.git</repo>
+    <issue>https://github.com/mo0rych0k/issues</issue>
+
+    <js-module src="www/ZipLoader.js" name="ZipLoader">
+        <merges target="cordova.plugins.ziploader" />
+    </js-module>
+
+    <engines>
+        <engine name="cordova" version=">=9.0.0"/>
+        <engine name="cordova-android" version=">=9.0.0" />
+    </engines>
+
+   <platform name="android">
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="ZipLoader">
+                <param name="android-package" value="com.zuiloader.plugin.ZipLoaderPlugin"/>
+            </feature>
+        </config-file>
+
+        <source-file src="src/android/ZipLoaderPlugin.java" target-dir="src/com/zuiloader/plugin" />
+    </platform>
+</plugin>
