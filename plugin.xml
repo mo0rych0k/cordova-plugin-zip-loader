@@ -19,10 +19,10 @@
    <platform name="android">
         <config-file target="res/xml/config.xml" parent="/*">
             <feature name="ZipLoader">
-                <param name="android-package" value="com.zuiloader.plugin.ZipLoaderPlugin"/>
+                <param name="android-package" value="com.ziploader.plugin.ZipLoaderPlugin"/>
             </feature>
         </config-file>
 
-        <source-file src="src/android/ZipLoaderPlugin.java" target-dir="src/com/zuiloader/plugin" />
+        <source-file src="src/android/ZipLoaderPlugin.java" target-dir="src/com/ziploader/plugin" />
     </platform>
 </plugin>
