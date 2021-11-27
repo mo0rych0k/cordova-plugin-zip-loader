@@ -25,4 +25,24 @@
 
         <source-file src="src/android/ZipLoaderPlugin.java" target-dir="src/com/ziploader/plugin" />
     </platform>
+
+    <platform name="ios">
+        <config-file target="config.xml" parent="/*">
+            <feature name="ZipLoader">
+                <param name="ios-package" value="ZipLoaderPlugin" />
+            </feature>
+        </config-file>
+        <source-file src="src/ios/ZipLoaderPlugin.swift" />
+        <source-file src="src/ios/Unzip.swift" />
+
+        <source-file src="src/ios/ZIPFoundation/Archive+MemoryFile.swift" />
+        <source-file src="src/ios/ZIPFoundation/Archive+Writing.swift" />
+        <source-file src="src/ios/ZIPFoundation/Data+Compression.swift" />
+        <source-file src="src/ios/ZIPFoundation/Entry.swift" />
+        <source-file src="src/ios/ZIPFoundation/Archive+Reading.swift" />
+        <source-file src="src/ios/ZIPFoundation/Archive.swift" />
+        <source-file src="src/ios/ZIPFoundation/Data+Serialization.swift" />
+        <source-file src="src/ios/ZIPFoundation/FileManager+ZIP.swift" />
+    </platform>
+
 </plugin>
