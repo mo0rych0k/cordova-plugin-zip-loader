@@ -30,9 +30,9 @@ public class ZipLoaderPlugin extends CordovaPlugin {
 
     private static final String TAG = "LoaderUtils";
     private static final String PROGRESS = "progress";
-    private static final String DOWNLOADED = "downloaded";
+    private static final String URL = "url";
 
-    CallbackContext callbackContext;
+    private CallbackContext callbackContext;
 
     @Override
     public boolean execute(String actionKey, JSONArray args, CallbackContext callbackContext) {
@@ -42,16 +42,15 @@ public class ZipLoaderPlugin extends CordovaPlugin {
                 case "downloadZip":
                     String url = args.optString(0);
                     downloadZip(url);
-                    PluginResult pluginResult = new  PluginResult(PluginResult.Status.NO_RESULT);
+                    PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
                     pluginResult.setKeepCallback(true); // Keep callback
                     callbackContext.sendPluginResult(pluginResult);
                     break;
                 case "remove":
                     final JSONArray array = args.getJSONArray(0);
-                    if(array != null) {
+                    if (array != null) {
                         deletePaths(convertToStringArray(array));
-                    }
-                    else {
+                    } else {
                         callbackContext.error("Empty array paths");
                     }
                     break;
@@ -106,7 +105,7 @@ public class ZipLoaderPlugin extends CordovaPlugin {
                 File file = new File(pathFolder, zipName);
                 int count;
 
-                URLConnection connection =  url.openConnection();
+                URLConnection connection = url.openConnection();
                 connection.connect();
                 int fileLength = connection.getContentLength();
                 // download the file
@@ -121,11 +120,9 @@ public class ZipLoaderPlugin extends CordovaPlugin {
                     output.write(data, 0, count);
                     downloaded += count;
                     // post progress
-                    Map<String, Object> map = new HashMap<>();
-                    if(percentage != ((float) downloaded / (float)fileLength)) {
-                        percentage = ((float) downloaded / (float)fileLength);
-                        map.put(PROGRESS, String.valueOf(percentage));
-                        emit(PROGRESS, map);
+                    if (percentage != ((float) downloaded / (float) fileLength)) {
+                        percentage = ((float) downloaded / (float) fileLength);
+                        emit(PROGRESS, percentage, true);
                     }
                 }
 
@@ -136,10 +133,6 @@ public class ZipLoaderPlugin extends CordovaPlugin {
                 output.close();
                 input.close();
 
-                Map<String, Object> map = new HashMap<>();
-                map.put(DOWNLOADED, String.valueOf(downloaded));
-                emit(DOWNLOADED, map);
-
                 //decompress file
                 unZip(file);
 
@@ -147,14 +140,13 @@ public class ZipLoaderPlugin extends CordovaPlugin {
                 deletePath(pathFolder);
                 callbackContext.error(e.getMessage());
             }
-        }
-        catch (MalformedURLException e) {
+        } catch (MalformedURLException e) {
             callbackContext.error(e.getMessage());
         }
     }
 
     /**
-     * @param fileZip  - zip file (delete after unzip, or delete path if have exception)
+     * @param fileZip - zip file (delete after unzip, or delete path if have exception)
      */
     private void unZip(File fileZip) {
         Log.d(TAG, String.format("un Zip %s", fileZip.getAbsolutePath()));
@@ -184,8 +176,7 @@ public class ZipLoaderPlugin extends CordovaPlugin {
             }
 
             if (fileZip.delete()) {
-                Log.d(TAG, String.format("success %s", Objects.requireNonNull(fileZip.getParentFile()).getAbsolutePath()));
-                callbackContext.success(Objects.requireNonNull(Objects.requireNonNull(fileZip.getParentFile()).getAbsolutePath()));
+                moveFiles(fileZip.getParentFile());
             } else {
                 deletePath(fileZip);
                 callbackContext.error("Zip file deleted problem");
@@ -194,6 +185,13 @@ public class ZipLoaderPlugin extends CordovaPlugin {
             deletePath(fileZip);
             callbackContext.error(e.getMessage());
         }
+    }
+
+    private void moveFiles(File unZipCachePath){
+        File unZipPath = new File(cordova.getActivity().getBaseContext().getFilesDir(), unZipCachePath.getName());
+        unZipCachePath.renameTo(unZipPath);
+        Log.d(TAG, String.format("success %s", Objects.requireNonNull(unZipPath).getAbsolutePath()));
+        emit(URL, Objects.requireNonNull(unZipPath).getAbsolutePath(), false);
     }
 
     // delete parent path if have problem
@@ -263,28 +261,43 @@ public class ZipLoaderPlugin extends CordovaPlugin {
         return realArr;
     }
 
-    private void deletePaths(String[] paths){
-        if(paths == null)
-            return;
+    private void deletePaths(String[] paths) {
+        cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                try {
+                    if (paths == null)
+                        return;
+                    boolean result = false;
+                    Log.d(TAG, " try delete paths : " + Arrays.toString(paths));
+                    for (String path : paths) {
+                        File file = new File(path);
+                        Log.d(TAG, file.getAbsolutePath() + " is exists : " + file.exists());
+                        if (file.exists()) {
+                            result = file.delete();
+                            Log.d(TAG, file.getAbsolutePath() + " is deleted :" + result);
+                        } else {
+                            result = true;
+                        }
+                    }
+                    if (result) {
+                        callbackContext.success();
+                    } else {
+                        callbackContext.error("Delete paths has problem!");
+                    }
+                } catch (Exception e) {
+                    callbackContext.error(e.getMessage());
+                }
 
-        Log.d(TAG, " try delete paths : " + Arrays.toString(paths));
-        for(String path: paths){
-            File file = new File(path);
-            Log.d(TAG, file.getAbsolutePath() + " is exists : " + file.exists());
-            if(file.exists()){
-                file.delete();
-                Log.d(TAG, file.getAbsolutePath() + " is deleted ");
             }
-        }
+        });
     }
 
-    public void emit(String eventName, Map<String, Object> data) {
-        JSONObject event = new JSONObject(new HashMap<String, Object>() {{
-            put("type", eventName);
-            put("data", data);
-        }});
-        PluginResult result = new PluginResult(PluginResult.Status.OK, event.toString());
-        result.setKeepCallback(true);
+    public void emit(String eventName, Object param, boolean setKeepCallback) {
+        PluginResult result = new PluginResult(PluginResult.Status.OK,
+                new JSONObject(new HashMap<String, Object>() {{
+                    put(eventName, param);
+                }}).toString());
+        result.setKeepCallback(setKeepCallback);
         callbackContext.sendPluginResult(result);
     }
 
