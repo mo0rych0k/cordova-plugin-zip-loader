@@ -1,10 +1,13 @@
 package com.ziploader.plugin;
 
 import org.apache.cordova.CallbackContext;
-import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
-import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.JSONException;
+
+import android.util.Log;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -12,58 +15,73 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.net.URL;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
+import java.net.URLConnection;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class ZipLoaderPlugin extends CordovaPlugin {
 
     private static final String TAG = "LoaderUtils";
-    private final static String timeName =
-            new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", Locale.US)
-            .format(new Date());
-    private static final String TEMP_PATH = "/Temp/" + timeName;
+    private static final String PROGRESS = "progress";
+    private static final String DOWNLOADED = "downloaded";
 
-
-    @Override
-    public void initialize(CordovaInterface cordova, CordovaWebView webView) {
-        super.initialize(cordova, webView);
-        Log.i(TAG, "Initialize plugin");
-    }
+    CallbackContext callbackContext;
 
     @Override
     public boolean execute(String actionKey, JSONArray args, CallbackContext callbackContext) {
-        Log.d(TAG, String.format("Execute %s", actionKey));
-
-        switch (actionKey) {
-            case "downloadZip":
-                String url = args.optString(0);
-                downloadZip(url, callbackContext);
-                break;
-            default:
-                return false;
+        this.callbackContext = callbackContext;
+        try {
+            switch (actionKey) {
+                case "downloadZip":
+                    String url = args.optString(0);
+                    downloadZip(url);
+                    PluginResult pluginResult = new  PluginResult(PluginResult.Status.NO_RESULT);
+                    pluginResult.setKeepCallback(true); // Keep callback
+                    callbackContext.sendPluginResult(pluginResult);
+                    break;
+                case "remove":
+                    final JSONArray array = args.getJSONArray(0);
+                    if(array != null) {
+                        deletePaths(convertToStringArray(array));
+                    }
+                    else {
+                        callbackContext.error("Empty array paths");
+                    }
+                    break;
+                default:
+                    return false;
+            }
+            return true;
+        } catch (JSONException e) {
+            e.printStackTrace();
+            callbackContext.error(e.getMessage());
+            return false;
         }
-        return true;
     }
 
     /**
      * Start download and unzip file. Delete zip file before send success result.
      * Before exception deleted parent path.
      * Path/zip name is current date UTC (yyyy_MM_dd_HH_mm_ss)
+     *
      * @param urlString - url link zip file
-     * @param callback  - callback result
      */
-    public void downloadZip(String urlString, final CallbackContext callback) {
+    public void downloadZip(String urlString) {
+        Log.d(TAG, String.format("downloadZip %s", urlString));
+
         cordova.getThreadPool().execute(new Runnable() {
             public void run() {
                 try {
-                    download(urlString, callback);
+                    download(urlString);
                 } catch (Exception e) {
-                    callback.error(e.getMessage());
+                    callbackContext.error(e.getMessage());
                 }
             }
         });
@@ -71,53 +89,75 @@ public class ZipLoaderPlugin extends CordovaPlugin {
 
     /**
      * @param urlString - url link zip file
-     * @param callback  - callback result on main thread
      */
-    private void download(String urlString, final CallbackContext callback) {
-        File pathFolder = new File(cordova.getActivity().getBaseContext().getFilesDir() + TEMP_PATH);
-        File file = new File(pathFolder, timeName + ".zip");
-
+    private void download(String urlString) {
         try {
-            int count;
-
-            if (!pathFolder.exists()) {
-                pathFolder.mkdirs();
-            }
-
             URL url = new URL(urlString);
-            url.openConnection().connect();
+            String zipName = new File(urlString).getName();
+            File pathFolder = new File(
+                    cordova.getActivity().getBaseContext().getCacheDir() + "/" +
+                            getFileNameWithoutExtension(zipName));
+            try {
 
-            // download the file
-            InputStream input = new BufferedInputStream(url.openStream());
-            FileOutputStream output = new FileOutputStream(file.getAbsolutePath());
+                if (!pathFolder.exists()) {
+                    pathFolder.mkdirs();
+                }
 
-            byte data[] = new byte[1024];
+                File file = new File(pathFolder, zipName);
+                int count;
 
-            while ((count = input.read(data)) != -1) {
-                // writing data to file
-                output.write(data, 0, count);
+                URLConnection connection =  url.openConnection();
+                connection.connect();
+                int fileLength = connection.getContentLength();
+                // download the file
+                InputStream input = new BufferedInputStream(url.openStream());
+                FileOutputStream output = new FileOutputStream(file.getAbsolutePath());
+
+                byte data[] = new byte[1024];
+                int downloaded = 0;
+                float percentage = 0;
+                while ((count = input.read(data)) != -1) {
+                    // writing data to file
+                    output.write(data, 0, count);
+                    downloaded += count;
+                    // post progress
+                    Map<String, Object> map = new HashMap<>();
+                    if(percentage != ((float) downloaded / (float)fileLength)) {
+                        percentage = ((float) downloaded / (float)fileLength);
+                        map.put(PROGRESS, String.valueOf(percentage));
+                        emit(PROGRESS, map);
+                    }
+                }
+
+                // flushing output
+                output.flush();
+
+                // closing streams
+                output.close();
+                input.close();
+
+                Map<String, Object> map = new HashMap<>();
+                map.put(DOWNLOADED, String.valueOf(downloaded));
+                emit(DOWNLOADED, map);
+
+                //decompress file
+                unZip(file);
+
+            } catch (Exception e) {
+                deletePath(pathFolder);
+                callbackContext.error(e.getMessage());
             }
-
-            // flushing output
-            output.flush();
-
-            // closing streams
-            output.close();
-            input.close();
-
-            //decompress file
-            unZip(file, callback);
-        } catch (Exception e) {
-            deletePath(pathFolder);
-            callback.error(e.getMessage());
+        }
+        catch (MalformedURLException e) {
+            callbackContext.error(e.getMessage());
         }
     }
 
     /**
-     * @param fileZip - zip file (delete after unzip, or delete path if have exception)
-     * @param callback - callback result
+     * @param fileZip  - zip file (delete after unzip, or delete path if have exception)
      */
-    private void unZip(File fileZip, final CallbackContext callback) {
+    private void unZip(File fileZip) {
+        Log.d(TAG, String.format("un Zip %s", fileZip.getAbsolutePath()));
         try (ZipInputStream zipInputStream = new ZipInputStream(
                 new BufferedInputStream(new FileInputStream(fileZip.getAbsolutePath())))) {
 
@@ -126,7 +166,6 @@ public class ZipLoaderPlugin extends CordovaPlugin {
             byte[] buffer = new byte[8192];
 
             while ((zipEntry = zipInputStream.getNextEntry()) != null) {
-                // new
                 File file = new File(fileZip.getParentFile(), zipEntry.getName());
                 File dir = zipEntry.isDirectory() ? file : file.getParentFile();
 
@@ -145,24 +184,113 @@ public class ZipLoaderPlugin extends CordovaPlugin {
             }
 
             if (fileZip.delete()) {
-                callback.success(Objects.requireNonNull(Objects.requireNonNull(fileZip.getParentFile()).getAbsolutePath()));
+                Log.d(TAG, String.format("success %s", Objects.requireNonNull(fileZip.getParentFile()).getAbsolutePath()));
+                callbackContext.success(Objects.requireNonNull(Objects.requireNonNull(fileZip.getParentFile()).getAbsolutePath()));
             } else {
                 deletePath(fileZip);
-                callback.error("Zip file deleted problem");
+                callbackContext.error("Zip file deleted problem");
             }
         } catch (Exception e) {
             deletePath(fileZip);
-            callback.error(e.getMessage());
+            callbackContext.error(e.getMessage());
         }
     }
 
     // delete parent path if have problem
-    private void deletePath(File file){
-        if(Objects.requireNonNull(file.getParentFile()).exists()) {
+    private void deletePath(File file) {
+        if (Objects.requireNonNull(file.getParentFile()).exists()) {
             file.getParentFile().delete();
         }
     }
 
+    /**
+     * this method get a JSONArray of strings and convert it to String array
+     *
+     * @param json JSONArray object that contains string elements
+     * @return the provided JSONArray converted to String array
+     * @throws JSONException
+     */
+    private String[] jsonArrayToStringArray(JSONArray json) throws JSONException {
+        if (json.length() == 0) {
+            return null;
+        }
+        String[] arr = new String[json.length()];
+        for (int i = 0; i < json.length(); i++) {
+            arr[i] = json.getString(i);
+        }
+        return arr;
+    }
+
+    /**
+     * This method get the JSONArray object from JS and convert it to String array.
+     * The first element can be string representation of a string array or JSONArray of strings.
+     *
+     * @param json JSONArray object from JS.
+     * @return String array or null
+     */
+    private String[] convertToStringArray(JSONArray json) {
+        if (json == null || json.length() == 0) {
+            return null;
+        }
+
+        String[] arr = null;
+        try {
+            Object obj = json.get(0);
+            if (obj instanceof String) {
+                arr = stringToArray((String) obj);
+            } else if (obj instanceof JSONArray) {
+                arr = jsonArrayToStringArray((JSONArray) obj);
+            }
+        } catch (JSONException | ClassCastException e) {
+            e.printStackTrace();
+            return null;
+        }
+        return arr;
+    }
+
+    /**
+     * takes string representation of a string array and converts it to an array. use this method because old version of cordova cannot pass an array to native.
+     * newer versions can, but can break flow to older users
+     *
+     * @param str
+     * @return String array
+     */
+    private String[] stringToArray(String str) {
+        String[] realArr = null;
+        str = str.substring(1, str.length() - 1);
+        str = str.replaceAll(" ", "");
+        realArr = str.split("[ ,]");
+        return realArr;
+    }
+
+    private void deletePaths(String[] paths){
+        if(paths == null)
+            return;
+
+        Log.d(TAG, " try delete paths : " + Arrays.toString(paths));
+        for(String path: paths){
+            File file = new File(path);
+            Log.d(TAG, file.getAbsolutePath() + " is exists : " + file.exists());
+            if(file.exists()){
+                file.delete();
+                Log.d(TAG, file.getAbsolutePath() + " is deleted ");
+            }
+        }
+    }
+
+    public void emit(String eventName, Map<String, Object> data) {
+        JSONObject event = new JSONObject(new HashMap<String, Object>() {{
+            put("type", eventName);
+            put("data", data);
+        }});
+        PluginResult result = new PluginResult(PluginResult.Status.OK, event.toString());
+        result.setKeepCallback(true);
+        callbackContext.sendPluginResult(result);
+    }
+
+    private static final Pattern ext = Pattern.compile("(?<=.)\\.[^.]+$");
+
+    public static String getFileNameWithoutExtension(String name) {
+        return ext.matcher(name).replaceAll("");
+    }
 }
-
-
