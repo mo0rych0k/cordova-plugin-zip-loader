@@ -161,6 +161,15 @@ public class ZipLoaderPlugin extends CordovaPlugin {
                 File file = new File(fileZip.getParentFile(), zipEntry.getName());
                 File dir = zipEntry.isDirectory() ? file : file.getParentFile();
 
+                // Fixing Zip Path Traversal Vulnerability
+                try {
+                    ensureZipPathSafety(file, fileZip.getParentFile());
+                } catch (Exception e) {
+                    deletePath(fileZip);
+                    callbackContext.error(e.getMessage());
+                    return;
+                }
+
                 if (!Objects.requireNonNull(dir).isDirectory() && !dir.mkdirs()) {
                     throw new FileNotFoundException("Failed to ensure directory: " +
                             dir.getAbsolutePath());
@@ -305,5 +314,13 @@ public class ZipLoaderPlugin extends CordovaPlugin {
 
     public static String getFileNameWithoutExtension(String name) {
         return ext.matcher(name).replaceAll("");
+    }
+
+    private void ensureZipPathSafety(final File outputFile, final String destDirectory) throws Exception {
+        String destDirCanonicalPath = (new File(destDirectory)).getCanonicalPath();
+        String outputFilecanonicalPath = outputFile.getCanonicalPath();
+        if (!outputFileCanonicalPath.startsWith(destDirCanonicalPath)) {
+            throw new Exception(String.format("Found Zip Path Traversal Vulnerability with %s", canonicalPath));
+        }
     }
 }
